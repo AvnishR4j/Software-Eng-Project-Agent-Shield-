@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { AuthError, requirePublisher } from "@/lib/auth";
-import { ensureSchema, runtimeEnv } from "@/lib/storage";
+import { getStorageBucket, getSupabaseServerClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
@@ -9,64 +9,66 @@ const MAX_BATCH_SIZE = 200 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(["pdf", "ppt", "pptx", "doc", "docx", "xls", "xlsx", "csv", "zip", "png", "jpg", "jpeg", "webp", "md", "txt"]);
 
 type PublishMetadata = {
-  title: string;
-  slug: string;
-  type: string;
-  version: string;
-  publishedDate: string;
-  authors: string[];
-  changeSummary: string;
-  commitUrl?: string;
-  deploymentUrl?: string;
-  idempotencyKey: string;
-  paths: string[];
+  title: string; slug: string; type: string; version: string; publishedDate: string;
+  authors: string[]; changeSummary: string; commitUrl?: string; deploymentUrl?: string;
+  idempotencyKey: string; paths: string[];
+};
+
+type UploadedAsset = {
+  id: string; object_key: string; relative_path: string; file_name: string;
+  mime_type: string; size: number; sha256: string;
 };
 
 export async function POST(request: Request) {
   const uploadedKeys: string[] = [];
   try {
     const publisher = await requirePublisher(request);
-    if (!runtimeEnv.DB || !runtimeEnv.UPLOADS) throw new Error("Publishing storage is unavailable.");
-    await ensureSchema();
+    const client = getSupabaseServerClient();
+    if (!client) throw new Error("Publishing storage is not configured.");
     const form = await request.formData();
     const metadata = parseMetadata(form.get("metadata"));
     const files = form.getAll("files").filter((entry): entry is File => entry instanceof File);
     validate(metadata, files);
 
-    const previous = await runtimeEnv.DB.prepare("SELECT version_id FROM publish_requests WHERE idempotency_key = ?").bind(metadata.idempotencyKey).first<{ version_id: string }>();
+    const { data: previous } = await client.from("publish_requests").select("version_id").eq("idempotency_key", metadata.idempotencyKey).maybeSingle();
     if (previous) return NextResponse.json({ ok: true, versionId: previous.version_id, duplicate: true });
 
-    const existing = await runtimeEnv.DB.prepare(`SELECT v.id FROM versions v JOIN deliverables d ON d.id = v.deliverable_id WHERE d.slug = ? AND v.version = ?`).bind(metadata.slug, metadata.version).first();
-    if (existing) return NextResponse.json({ error: "That version already exists. Choose a new version label." }, { status: 409 });
-
-    const now = new Date().toISOString();
-    const deliverableId = `deliverable_${crypto.randomUUID()}`;
-    const versionId = `version_${crypto.randomUUID()}`;
-    const existingDeliverable = await runtimeEnv.DB.prepare("SELECT id FROM deliverables WHERE slug = ?").bind(metadata.slug).first<{ id: string }>();
-    const resolvedDeliverableId = existingDeliverable?.id ?? deliverableId;
-    const assetRecords = [];
-
+    const assetRecords: UploadedAsset[] = [];
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
       const relativePath = sanitizePath(metadata.paths[index] || file.name);
       const bytes = await file.arrayBuffer();
       const sha256 = await digest(bytes);
       const objectKey = `${metadata.slug}/${metadata.version}/${crypto.randomUUID()}-${relativePath}`;
-      await runtimeEnv.UPLOADS.put(objectKey, bytes, { httpMetadata: { contentType: file.type || "application/octet-stream" }, customMetadata: { publisher: publisher.email, sha256 } });
+      const { error } = await client.storage.from(getStorageBucket()).upload(objectKey, bytes, { contentType: file.type || "application/octet-stream", upsert: false, metadata: { publisher: publisher.email, sha256 } });
+      if (error) throw error;
       uploadedKeys.push(objectKey);
-      assetRecords.push({ id: `asset_${crypto.randomUUID()}`, objectKey, relativePath, fileName: file.name, mimeType: file.type || "application/octet-stream", size: file.size, sha256 });
+      assetRecords.push({ id: crypto.randomUUID(), object_key: objectKey, relative_path: relativePath, file_name: file.name, mime_type: file.type || "application/octet-stream", size: file.size, sha256 });
     }
 
-    const statements = [];
-    if (!existingDeliverable) statements.push(runtimeEnv.DB.prepare("INSERT INTO deliverables (id, slug, title, type, created_at) VALUES (?, ?, ?, ?, ?)").bind(resolvedDeliverableId, metadata.slug, metadata.title, metadata.type, now));
-    statements.push(runtimeEnv.DB.prepare(`INSERT INTO versions (id, deliverable_id, version, published_date, authors_json, change_summary, commit_url, deployment_url, publisher_email, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(versionId, resolvedDeliverableId, metadata.version, metadata.publishedDate, JSON.stringify(metadata.authors), metadata.changeSummary, metadata.commitUrl || null, metadata.deploymentUrl || null, publisher.email, now));
-    for (const asset of assetRecords) statements.push(runtimeEnv.DB.prepare(`INSERT INTO assets (id, version_id, object_key, relative_path, file_name, mime_type, size, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(asset.id, versionId, asset.objectKey, asset.relativePath, asset.fileName, asset.mimeType, asset.size, asset.sha256, now));
-    statements.push(runtimeEnv.DB.prepare("INSERT INTO publish_requests (idempotency_key, version_id, created_at) VALUES (?, ?, ?)").bind(metadata.idempotencyKey, versionId, now));
-    statements.push(runtimeEnv.DB.prepare("INSERT INTO audit_events (id, action, actor_email, deliverable_id, version_id, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(`audit_${crypto.randomUUID()}`, "PUBLISHED", publisher.email, resolvedDeliverableId, versionId, JSON.stringify({ title: metadata.title, slug: metadata.slug, version: metadata.version, files: assetRecords.length }), now));
-    await runtimeEnv.DB.batch(statements);
-    return NextResponse.json({ ok: true, url: `/deliverables/${metadata.slug}/v/${metadata.version}`, versionId });
+    const { data, error } = await client.rpc("publish_deliverable_version", {
+      p_title: metadata.title,
+      p_slug: metadata.slug,
+      p_type: metadata.type,
+      p_version: metadata.version,
+      p_published_date: metadata.publishedDate,
+      p_authors: metadata.authors,
+      p_change_summary: metadata.changeSummary,
+      p_commit_url: metadata.commitUrl || null,
+      p_deployment_url: metadata.deploymentUrl || null,
+      p_publisher_email: publisher.email,
+      p_idempotency_key: metadata.idempotencyKey,
+      p_assets: assetRecords,
+    });
+    if (error) {
+      if (error.code === "23505") return NextResponse.json({ error: "That version already exists. Choose a new version label." }, { status: 409 });
+      throw error;
+    }
+    const result = data as { version_id?: string; duplicate?: boolean } | null;
+    return NextResponse.json({ ok: true, url: `/deliverables/${metadata.slug}/v/${metadata.version}`, versionId: result?.version_id, duplicate: result?.duplicate ?? false });
   } catch (error) {
-    if (runtimeEnv.UPLOADS && uploadedKeys.length) await Promise.all(uploadedKeys.map((key) => runtimeEnv.UPLOADS!.delete(key).catch(() => undefined)));
+    const client = getSupabaseServerClient();
+    if (client && uploadedKeys.length) await client.storage.from(getStorageBucket()).remove(uploadedKeys);
     const status = error instanceof AuthError ? error.status : error instanceof ValidationError ? 400 : 500;
     const message = error instanceof Error ? error.message : "Publication failed.";
     return NextResponse.json({ error: message }, { status });

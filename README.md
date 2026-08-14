@@ -8,7 +8,7 @@ AgentShield is a provider-independent runtime security and governance gateway fo
 - Permanent page for every presentation, report and deliverable version
 - Passwordless publisher access restricted to the four team members and instructor
 - Drag-and-drop file and folder publishing with progress and validation
-- D1-backed metadata, append-only activity history and R2-backed file storage
+- Supabase Postgres metadata, append-only activity history and private Supabase file storage
 - SHA-256 file manifests and added/modified/removed change tracking
 - Responsive, keyboard-accessible interface and branded social preview
 
@@ -21,7 +21,7 @@ npm install
 npm run dev
 ```
 
-Copy `.env.example` to `.env` and provide a Supabase project URL and publishable key to enable passwordless sign-in locally. The five approved users must already exist in Supabase Auth; public signup is disabled.
+Copy `.env.example` to `.env.local`, add the Supabase public and server credentials, and apply `supabase/migrations/202608150001_agentshield_publishing.sql`. The five approved users must already exist in Supabase Auth; public signup is disabled.
 
 ## Quality checks
 
@@ -31,11 +31,7 @@ npx tsc --noEmit
 npm test
 ```
 
-Generate a new D1 migration after changing `db/schema.ts`:
-
-```bash
-npm run db:generate
-```
+The production site is deployed through Vercel. Supabase provides passwordless authentication, relational version records and private deliverable storage.
 
 ## Team
 

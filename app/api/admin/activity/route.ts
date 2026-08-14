@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
 import { AuthError, requirePublisher } from "@/lib/auth";
-import { ensureSchema, runtimeEnv } from "@/lib/storage";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
     const publisher = await requirePublisher(request);
-    await ensureSchema();
-    const activity = await runtimeEnv.DB!.prepare(`
-      SELECT action, actor_email, metadata_json, created_at
-      FROM audit_events ORDER BY created_at DESC LIMIT 25
-    `).all<Record<string, string>>();
-    return NextResponse.json({ publisher, activity: activity.results.map((item: Record<string, string>) => ({ ...item, metadata: JSON.parse(item.metadata_json) })) });
+    const client = getSupabaseServerClient();
+    if (!client) throw new Error("Publishing database is not configured.");
+    const { data, error } = await client.from("audit_events").select("action, actor_email, metadata_json, created_at").order("created_at", { ascending: false }).limit(25);
+    if (error) throw error;
+    return NextResponse.json({ publisher, activity: (data ?? []).map((item) => ({ ...item, metadata: item.metadata_json })) });
   } catch (error) {
     const status = error instanceof AuthError ? error.status : 500;
     const message = error instanceof Error ? error.message : "Unable to load activity.";

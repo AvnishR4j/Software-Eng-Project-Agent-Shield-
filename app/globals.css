@@ -15,6 +15,8 @@
   --red: #dc6b5f;
   --amber: #e2a548;
   --radius: 22px;
+  --font-geist-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-geist-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 * { box-sizing: border-box; }
