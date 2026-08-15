@@ -73,6 +73,14 @@ export function AdminPortal() {
     setLoginState("idle");
   }
 
+  async function signInWithGoogle() {
+    setLoginError("");
+    if (!client) return;
+    setLoginState("signing-in");
+    const { error } = await client.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/admin` } });
+    if (error) { setLoginState("idle"); setLoginError(error.message); }
+  }
+
   async function savePassword(event: FormEvent) {
     event.preventDefault();
     setPasswordError("");
@@ -135,10 +143,11 @@ export function AdminPortal() {
   if (!sessionEmail) return (
     <div className="admin-auth-card">
       <div className="auth-icon"><KeyRound /></div><p className="kicker">Publisher portal</p><h1>Sign in to publish.</h1>
-      <p>Use your approved Thapar email and personal password. The public site stays open for everyone else.</p>
-      <form className="login-form" onSubmit={signIn}><label>Thapar email address<input type="email" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} placeholder="name@thapar.edu" required /></label><label>Password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label><button className="button button-primary" disabled={loginState === "signing-in"}>{loginState === "signing-in" ? <LoaderCircle className="spin" /> : <KeyRound size={17} />} Sign in</button></form>
+      <p>Sign in with Google or use your approved Thapar email and personal password. The public site stays open for everyone else.</p>
+      <div className="login-form"><button type="button" className="button button-primary" onClick={signInWithGoogle} disabled={loginState === "signing-in"}>{loginState === "signing-in" ? <LoaderCircle className="spin" /> : <ShieldCheck size={17} />} Continue with Google</button></div>
+      <form className="login-form" onSubmit={signIn}><label>Thapar email address<input type="email" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} placeholder="name@thapar.edu" required /></label><label>Password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label><button className="button button-primary" disabled={loginState === "signing-in"}>{loginState === "signing-in" ? <LoaderCircle className="spin" /> : <KeyRound size={17} />} Sign in with password</button></form>
       {loginError && <p className="form-error">{loginError}</p>}
-      <p className="auth-footnote"><ShieldCheck size={15} /> First visit? Accept your invitation, then choose a password from the signed-in workspace.</p>
+      <p className="auth-footnote"><ShieldCheck size={15} /> Your Google account must use one of the five approved Thapar email addresses.</p>
     </div>
   );
 
