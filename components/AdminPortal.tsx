@@ -108,7 +108,7 @@ export function AdminPortal() {
     <div className="admin-auth-card">
       <div className="auth-icon"><KeyRound /></div><p className="kicker">Configuration required</p><h1>Connect passwordless sign-in.</h1>
       <p>The public site is ready. Add the Supabase URL and publishable key in the hosted environment to activate magic-link access for the five approved accounts.</p>
-      <div className="config-keys"><code>SUPABASE_URL</code><code>SUPABASE_PUBLISHABLE_KEY</code></div>
+      <div className="config-keys"><code>NEXT_PUBLIC_SUPABASE_URL</code><code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code></div>
       <Link className="button button-primary" href="/">Return to public site <ArrowRight size={16} /></Link>
     </div>
   );
