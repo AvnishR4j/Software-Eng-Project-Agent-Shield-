@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { ArrowRight, Check, ChevronRight, File, FilePlus2, FolderOpen, KeyRound, LoaderCircle, LogOut, Mail, ShieldCheck, UploadCloud, X } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, File, FilePlus2, FolderOpen, KeyRound, LoaderCircle, LogOut, ShieldCheck, UploadCloud, X } from "lucide-react";
 import { allowedPublishers, deliverableTypes, members } from "@/lib/content";
 
 type SelectedFile = { file: File; path: string };
@@ -15,8 +15,14 @@ export function AdminPortal() {
   const [client, setClient] = useState<SupabaseClient | null>(null);
   const [sessionEmail, setSessionEmail] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
-  const [loginState, setLoginState] = useState<"idle" | "sending" | "sent">("idle");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginState, setLoginState] = useState<"idle" | "signing-in">("idle");
   const [loginError, setLoginError] = useState("");
+  const [passwordPanel, setPasswordPanel] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const [files, setFiles] = useState<SelectedFile[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [authors, setAuthors] = useState<string[]>(members.map((member) => member.name));
@@ -57,14 +63,27 @@ export function AdminPortal() {
   const totalSize = useMemo(() => files.reduce((total, item) => total + item.file.size, 0), [files]);
   const approved = allowedPublishers.includes(sessionEmail);
 
-  async function sendMagicLink(event: FormEvent) {
+  async function signIn(event: FormEvent) {
     event.preventDefault();
     setLoginError("");
     if (!client || !allowedPublishers.includes(loginEmail.toLowerCase())) { setLoginError("Use one of the five approved Thapar email addresses."); return; }
-    setLoginState("sending");
-    const { error } = await client.auth.signInWithOtp({ email: loginEmail.toLowerCase(), options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}/admin` } });
+    setLoginState("signing-in");
+    const { error } = await client.auth.signInWithPassword({ email: loginEmail.toLowerCase(), password: loginPassword });
     if (error) { setLoginState("idle"); setLoginError(error.message); return; }
-    setLoginState("sent");
+    setLoginState("idle");
+  }
+
+  async function savePassword(event: FormEvent) {
+    event.preventDefault();
+    setPasswordError("");
+    if (!client) return;
+    if (newPassword.length < 8) { setPasswordError("Choose a password with at least 8 characters."); return; }
+    if (newPassword !== confirmPassword) { setPasswordError("The passwords do not match."); return; }
+    setPasswordSaving(true);
+    const { error } = await client.auth.updateUser({ password: newPassword });
+    setPasswordSaving(false);
+    if (error) { setPasswordError(error.message); return; }
+    setNewPassword(""); setConfirmPassword(""); setPasswordPanel(false);
   }
 
   async function handleDrop(event: React.DragEvent<HTMLDivElement>) {
@@ -106,8 +125,8 @@ export function AdminPortal() {
 
   if (!config.configured) return (
     <div className="admin-auth-card">
-      <div className="auth-icon"><KeyRound /></div><p className="kicker">Configuration required</p><h1>Connect passwordless sign-in.</h1>
-      <p>The public site is ready. Add the Supabase URL and publishable key in the hosted environment to activate magic-link access for the five approved accounts.</p>
+      <div className="auth-icon"><KeyRound /></div><p className="kicker">Configuration required</p><h1>Connect secure sign-in.</h1>
+      <p>The public site is ready. Add the Supabase URL and publishable key in the hosted environment to activate access for the five approved accounts.</p>
       <div className="config-keys"><code>NEXT_PUBLIC_SUPABASE_URL</code><code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code></div>
       <Link className="button button-primary" href="/">Return to public site <ArrowRight size={16} /></Link>
     </div>
@@ -115,11 +134,11 @@ export function AdminPortal() {
 
   if (!sessionEmail) return (
     <div className="admin-auth-card">
-      <div className="auth-icon"><Mail /></div><p className="kicker">Publisher portal</p><h1>Sign in without a password.</h1>
-      <p>Enter your approved Thapar email. We will send a single-use link that returns you to this workspace.</p>
-      {loginState === "sent" ? <div className="success-note"><Check /> Check your inbox. The sign-in link is ready.</div> : <form className="login-form" onSubmit={sendMagicLink}><label>Thapar email address<input type="email" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} placeholder="name@thapar.edu" required /></label><button className="button button-primary" disabled={loginState === "sending"}>{loginState === "sending" ? <LoaderCircle className="spin" /> : <Mail size={17} />} Send magic link</button></form>}
+      <div className="auth-icon"><KeyRound /></div><p className="kicker">Publisher portal</p><h1>Sign in to publish.</h1>
+      <p>Use your approved Thapar email and personal password. The public site stays open for everyone else.</p>
+      <form className="login-form" onSubmit={signIn}><label>Thapar email address<input type="email" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} placeholder="name@thapar.edu" required /></label><label>Password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label><button className="button button-primary" disabled={loginState === "signing-in"}>{loginState === "signing-in" ? <LoaderCircle className="spin" /> : <KeyRound size={17} />} Sign in</button></form>
       {loginError && <p className="form-error">{loginError}</p>}
-      <p className="auth-footnote"><ShieldCheck size={15} /> Access is restricted to the project team and instructor.</p>
+      <p className="auth-footnote"><ShieldCheck size={15} /> First visit? Accept your invitation, then choose a password from the signed-in workspace.</p>
     </div>
   );
 
@@ -130,7 +149,7 @@ export function AdminPortal() {
       <aside className="admin-sidebar">
         <Link className="brand" href="/"><span className="brand-mark"><ShieldCheck size={19} /></span><span>AgentShield</span></Link>
         <div className="admin-nav"><span className="active"><FilePlus2 /> New publication</span><span><FolderOpen /> Version archive</span><span><ShieldCheck /> Activity log</span></div>
-        <div className="signed-in"><span>{sessionEmail === "ssingh1_phd23@thapar.edu" ? "Admin" : "Publisher"}</span><strong>{sessionEmail}</strong><button onClick={() => client?.auth.signOut()}><LogOut size={15} /> Sign out</button></div>
+        <div className="signed-in"><span>{sessionEmail === "ssingh1_phd23@thapar.edu" ? "Admin" : "Publisher"}</span><strong>{sessionEmail}</strong><button onClick={() => setPasswordPanel(true)}><KeyRound size={15} /> Set password</button><button onClick={() => client?.auth.signOut()}><LogOut size={15} /> Sign out</button></div>
       </aside>
       <main className="admin-main">
         <div className="admin-title"><div><p className="kicker">New publication</p><h1>Publish the next chapter.</h1><p>Create an immutable page for a presentation, report or project milestone.</p></div><div className="draft-state"><span /> Private draft</div></div>
@@ -157,6 +176,7 @@ export function AdminPortal() {
         </div>
       </main>
       {preview && <div className="preview-overlay" role="dialog" aria-modal="true" aria-label="Publication preview"><div className="preview-modal"><button className="modal-close" onClick={() => setPreview(false)} aria-label="Close preview"><X /></button><p className="kicker">Public page preview</p><div className="deliverable-tags"><span>{type}</span><span>{version}</span><span>Permanent record</span></div><h1>{title || "Untitled publication"}</h1><p className="document-summary">{changeSummary || "Add a concise change summary to explain this version."}</p><div className="preview-record"><span>Publication date<strong>{publishedDate}</strong></span><span>Authors<strong>{authors.join(", ") || "No author selected"}</strong></span><span>Files<strong>{files.length} · {formatBytes(totalSize)}</strong></span></div><div className="asset-list">{files.slice(0, 4).map((item) => <div className="asset-row" key={item.path}><div className="document-icon"><File /></div><div><strong>{item.path}</strong><span>{formatBytes(item.file.size)}</span></div></div>)}</div><button className="button button-primary" onClick={() => setPreview(false)}>Continue editing</button></div></div>}
+      {passwordPanel && <div className="preview-overlay" role="dialog" aria-modal="true" aria-label="Set password"><form className="preview-modal login-form" onSubmit={savePassword}><button className="modal-close" type="button" onClick={() => setPasswordPanel(false)} aria-label="Close password settings"><X /></button><p className="kicker">Account security</p><h1>Set your password.</h1><p className="document-summary">Choose a personal password for future Publisher Portal sign-ins.</p><label>New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label><label>Confirm password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label>{passwordError && <p className="form-error">{passwordError}</p>}<button className="button button-primary" disabled={passwordSaving}>{passwordSaving ? <LoaderCircle className="spin" /> : <KeyRound size={17} />} Save password</button></form></div>}
     </div>
   );
 }
