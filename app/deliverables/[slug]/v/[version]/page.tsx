@@ -4,8 +4,13 @@ import { ArrowLeft, CalendarDays, Download, ExternalLink, FileText, GitCommitHor
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import { getPublishedVersion } from "@/lib/storage";
+import { initialDeliverable } from "@/lib/content";
 
-export const dynamic = "force-dynamic";
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return [{ slug: initialDeliverable.slug, version: initialDeliverable.version }];
+}
 
 export default async function DeliverableVersionPage({ params }: { params: Promise<{ slug: string; version: string }> }) {
   const { slug, version } = await params;

@@ -13,7 +13,7 @@ export function SiteFooter() {
         <div className="footer-links">
           <Link href="/project">Project brief</Link>
           <Link href="/deliverables">Version archive</Link>
-          <Link href="/admin">Publisher portal</Link>
+          <Link href={project.publisherPortal}>Publisher portal</Link>
           <a href={project.repo} target="_blank" rel="noreferrer">Source repository</a>
         </div>
         <div className="footer-meta">

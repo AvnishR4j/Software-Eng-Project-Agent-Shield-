@@ -1,12 +1,30 @@
-import { redirect } from "next/navigation";
+import Link from "next/link";
 import { initialDeliverable } from "@/lib/content";
-import { listPublishedDeliverables } from "@/lib/storage";
+import { SiteFooter } from "@/components/SiteFooter";
+import { SiteHeader } from "@/components/SiteHeader";
 
-export const dynamic = "force-dynamic";
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return [{ slug: initialDeliverable.slug }];
+}
 
 export default async function LatestDeliverablePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const items = await listPublishedDeliverables();
-  const latest = items.filter((item) => item.slug === slug).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0];
-  redirect(latest ? `/deliverables/${slug}/v/${latest.version}` : `/deliverables/${initialDeliverable.slug}/v/${initialDeliverable.version}`);
+  const target = slug === initialDeliverable.slug ? initialDeliverable : initialDeliverable;
+
+  return (
+    <main>
+      <SiteHeader />
+      <section className="page-hero shell">
+        <p className="kicker">Latest version</p>
+        <h1>{target.title}</h1>
+        <p>{target.changeSummary}</p>
+        <Link className="button button-primary" href={`/deliverables/${target.slug}/v/${target.version}`}>
+          Open {target.version}
+        </Link>
+      </section>
+      <SiteFooter />
+    </main>
+  );
 }

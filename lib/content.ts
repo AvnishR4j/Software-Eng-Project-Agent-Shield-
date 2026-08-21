@@ -1,3 +1,5 @@
+const siteBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export const project = {
   name: "AgentShield",
   status: "Planning / Foundation",
@@ -6,6 +8,8 @@ export const project = {
   instructor: "Dr. Sukhpal Singh",
   instructorEmail: "ssingh1_phd23@thapar.edu",
   repo: "https://github.com/AvnishR4j/Software-Eng-Project-Agent-Shield-",
+  publisherPortal:
+    process.env.NEXT_PUBLIC_PUBLISHER_PORTAL_URL ?? "/admin",
 };
 
 export const members = [
@@ -70,7 +74,7 @@ export const initialDeliverable = {
       mimeType: "application/pdf",
       size: 0,
       sha256: "Initial academic deliverable",
-      downloadUrl: "/deliverables/AgentShield_Planning_v1.pdf",
+      downloadUrl: `${siteBasePath}/deliverables/AgentShield_Planning_v1.pdf`,
     },
   ],
 };
